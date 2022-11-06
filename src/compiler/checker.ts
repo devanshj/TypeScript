@@ -22771,7 +22771,7 @@ namespace ts {
                         // As a special case, also ignore nonInferrableAnyType, which is a special form of the any type
                         // used as a stand-in for binding elements when they are being inferred.
                         if (getObjectFlags(source) & ObjectFlags.NonInferrableType || source === nonInferrableAnyType) {
-                            return;
+                            //return;
                         }
                         if (!inference.isFixed) {
                             if (inference.priority === undefined || priority < inference.priority) {
@@ -30559,6 +30559,8 @@ namespace ts {
                     const paramType = getTypeAtPosition(signature, i);
                     if (couldContainTypeVariables(paramType)) {
                         const argType = checkExpressionWithContextualType(arg, paramType, context, checkMode);
+                        // @ts-ignore
+                        console.log(checkMode, argType.__debugTypeToString(), paramType.__debugTypeToString())
                         inferTypes(context.inferences, argType, paramType);
                     }
                 }
@@ -33446,10 +33448,10 @@ namespace ts {
             // The identityMapper object is used to indicate that function expressions are wildcards
             if (checkMode && checkMode & CheckMode.SkipContextSensitive && isContextSensitive(node)) {
                 // Skip parameters, return signature with return type that retains noncontextual parts so inferences can still be drawn in an early stage
-                if (!getEffectiveReturnTypeNode(node) && !hasContextSensitiveParameters(node)) {
+                //if (!getEffectiveReturnTypeNode(node) && !hasContextSensitiveParameters(node)) {
                     // Return plain anyFunctionType if there is no possibility we'll make inferences from the return type
-                    const contextualSignature = getContextualSignature(node);
-                    if (contextualSignature && couldContainTypeVariables(getReturnTypeOfSignature(contextualSignature))) {
+                    //const contextualSignature = getContextualSignature(node);
+                    //if (contextualSignature && couldContainTypeVariables(getReturnTypeOfSignature(contextualSignature))) {
                         const links = getNodeLinks(node);
                         if (links.contextFreeType) {
                             return links.contextFreeType;
@@ -33459,8 +33461,8 @@ namespace ts {
                         const returnOnlyType = createAnonymousType(node.symbol, emptySymbols, [returnOnlySignature], emptyArray, emptyArray);
                         returnOnlyType.objectFlags |= ObjectFlags.NonInferrableType;
                         return links.contextFreeType = returnOnlyType;
-                    }
-                }
+                    //}
+                //}
                 return anyFunctionType;
             }
 
