@@ -3,7 +3,7 @@ declare const f:
 
 type F<T> =
   { a: unknown
-  , b: (a: T extends { a: infer X } ? X : never) => unknown
+  , b: (a: T["a" & keyof T]) => unknown
   }
 
 f({

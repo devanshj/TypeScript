@@ -22672,7 +22672,15 @@ namespace ts {
             let sourceStack: object[];
             let targetStack: object[];
             let expandingFlags = ExpandingFlags.None;
+            
+            // @ts-ignore
+            // console.log("source", originalSource.__debugTypeToString());
+            // @ts-ignore
+            // console.log("target", originalTarget.__debugTypeToString());
             inferFromTypes(originalSource, originalTarget);
+            // @ts-ignore
+            // console.log("result", getInferenceInfoForType(originalTarget)?.candidates?.map(x => x.__debugTypeToString()));
+            // console.log("---");
 
             function inferFromTypes(source: Type, target: Type): void {
                 if (!couldContainTypeVariables(target)) {
@@ -22771,7 +22779,7 @@ namespace ts {
                         // As a special case, also ignore nonInferrableAnyType, which is a special form of the any type
                         // used as a stand-in for binding elements when they are being inferred.
                         if (getObjectFlags(source) & ObjectFlags.NonInferrableType || source === nonInferrableAnyType) {
-                            //return;
+                            return;
                         }
                         if (!inference.isFixed) {
                             if (inference.priority === undefined || priority < inference.priority) {
@@ -28215,6 +28223,63 @@ namespace ts {
         }
 
         function checkObjectLiteral(node: ObjectLiteralExpression, checkMode?: CheckMode): Type {
+            const contextualType = getContextualType(node, /*contextFlags*/ undefined);
+            const isContextualTypeDependent = 
+              contextualType &&
+              contextualType.immediateBaseConstraint && 
+              contextualType.immediateBaseConstraint.aliasTypeArguments &&
+              contextualType.immediateBaseConstraint.aliasTypeArguments.length === 1 &&
+              contextualType.immediateBaseConstraint.aliasTypeArguments[0].id === contextualType.id
+
+            if (!isContextualTypeDependent) {
+                return checkNonDependentlyObjectLiteral(node, checkMode)
+            }
+
+            let valueType = checkNonDependentlyObjectLiteral(node, checkMode);
+            
+            let newImmediateBaseConstraint = createTypeParameter()
+            newImmediateBaseConstraint.aliasSymbol = contextualType.immediateBaseConstraint!.aliasSymbol
+            newImmediateBaseConstraint.aliasTypeArguments = [valueType];
+
+            let originalImmediateBaseConstraint = contextualType.immediateBaseConstraint
+            contextualType.immediateBaseConstraint = newImmediateBaseConstraint
+
+            recursivelyClearNodeCaches(node)
+            let r = checkNonDependentlyObjectLiteral(node, checkMode);
+
+            contextualType.immediateBaseConstraint = originalImmediateBaseConstraint
+            
+            return r
+        }
+
+        function recursivelyClearNodeCaches(node: any) {
+            let visited = new WeakMap()
+            clearCaches(node)
+
+            function clearCaches(node: any) {
+                if (!(typeof node === "object" && node !== null)) return
+                if (visited.has(node)) return
+                visited.set(node, true)
+
+                if (isNode(node)) {
+                    let nodeLinks = getNodeLinks(node);
+                    nodeLinks.flags &= ~NodeCheckFlags.TypeChecked;
+                    nodeLinks.flags &= ~NodeCheckFlags.ContextChecked;
+                    nodeLinks.resolvedType = undefined;
+                    nodeLinks.resolvedEnumType = undefined;
+                    nodeLinks.resolvedSignature = undefined;
+                    nodeLinks.resolvedSymbol = undefined;
+                    nodeLinks.resolvedIndexInfo = undefined;
+                    nodeLinks.contextFreeType = undefined
+                }
+
+                for (let k in node) {
+                    clearCaches(node[k]);
+                }
+            }
+        }
+
+        function checkNonDependentlyObjectLiteral(node: ObjectLiteralExpression, checkMode?: CheckMode): Type {
             const inDestructuringPattern = isAssignmentTarget(node);
             // Grammar checking
             checkGrammarObjectLiteralExpression(node, inDestructuringPattern);
@@ -30560,7 +30625,7 @@ namespace ts {
                     if (couldContainTypeVariables(paramType)) {
                         const argType = checkExpressionWithContextualType(arg, paramType, context, checkMode);
                         // @ts-ignore
-                        console.log(checkMode, argType.__debugTypeToString(), paramType.__debugTypeToString())
+                        // console.log(checkMode, argType.__debugTypeToString(), paramType.__debugTypeToString())
                         inferTypes(context.inferences, argType, paramType);
                     }
                 }
@@ -33448,10 +33513,10 @@ namespace ts {
             // The identityMapper object is used to indicate that function expressions are wildcards
             if (checkMode && checkMode & CheckMode.SkipContextSensitive && isContextSensitive(node)) {
                 // Skip parameters, return signature with return type that retains noncontextual parts so inferences can still be drawn in an early stage
-                //if (!getEffectiveReturnTypeNode(node) && !hasContextSensitiveParameters(node)) {
+                if (!getEffectiveReturnTypeNode(node) && !hasContextSensitiveParameters(node)) {
                     // Return plain anyFunctionType if there is no possibility we'll make inferences from the return type
-                    //const contextualSignature = getContextualSignature(node);
-                    //if (contextualSignature && couldContainTypeVariables(getReturnTypeOfSignature(contextualSignature))) {
+                    const contextualSignature = getContextualSignature(node);
+                    if (contextualSignature && couldContainTypeVariables(getReturnTypeOfSignature(contextualSignature))) {
                         const links = getNodeLinks(node);
                         if (links.contextFreeType) {
                             return links.contextFreeType;
@@ -33461,8 +33526,8 @@ namespace ts {
                         const returnOnlyType = createAnonymousType(node.symbol, emptySymbols, [returnOnlySignature], emptyArray, emptyArray);
                         returnOnlyType.objectFlags |= ObjectFlags.NonInferrableType;
                         return links.contextFreeType = returnOnlyType;
-                    //}
-                //}
+                    }
+                }
                 return anyFunctionType;
             }
 
@@ -33478,6 +33543,7 @@ namespace ts {
         }
 
         function contextuallyCheckFunctionExpressionOrObjectLiteralMethod(node: FunctionExpression | ArrowFunction | MethodDeclaration, checkMode?: CheckMode) {
+            console.log("got here")
             const links = getNodeLinks(node);
             // Check if function expression is contextually typed and assign parameter types if so.
             if (!(links.flags & NodeCheckFlags.ContextChecked)) {
