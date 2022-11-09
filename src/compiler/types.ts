@@ -885,6 +885,7 @@ namespace ts {
         /* @internal */ emitNode?: EmitNode;                  // Associated EmitNode (initialized by transforms)
         /* @internal */ contextualType?: Type;                // Used to temporarily assign a contextual type during overload resolution
         /* @internal */ inferenceContext?: InferenceContext;  // Inference context for contextual type
+        /* @internal */ dependentContextualType?: Type;       // Contextual type for the second pass of contextual checking
     }
 
     export interface JSDocContainer {

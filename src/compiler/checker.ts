@@ -22673,14 +22673,7 @@ namespace ts {
             let targetStack: object[];
             let expandingFlags = ExpandingFlags.None;
             
-            // @ts-ignore
-            // console.log("source", originalSource.__debugTypeToString());
-            // @ts-ignore
-            // console.log("target", originalTarget.__debugTypeToString());
             inferFromTypes(originalSource, originalTarget);
-            // @ts-ignore
-            // console.log("result", getInferenceInfoForType(originalTarget)?.candidates?.map(x => x.__debugTypeToString()));
-            // console.log("---");
 
             function inferFromTypes(source: Type, target: Type): void {
                 if (!couldContainTypeVariables(target)) {
@@ -27175,7 +27168,8 @@ namespace ts {
         function getContextualTypeForArgument(callTarget: CallLikeExpression, arg: Expression): Type | undefined {
             const args = getEffectiveCallArguments(callTarget);
             const argIndex = args.indexOf(arg); // -1 for e.g. the expression of a CallExpression, or the tag of a TaggedTemplateExpression
-            return argIndex === -1 ? undefined : getContextualTypeForArgumentAtIndex(callTarget, argIndex);
+            let x = argIndex === -1 ? undefined : getContextualTypeForArgumentAtIndex(callTarget, argIndex);
+            return x
         }
 
         function getContextualTypeForArgumentAtIndex(callTarget: CallLikeExpression, argIndex: number): Type {
@@ -27422,13 +27416,18 @@ namespace ts {
                 return propertyAssignmentType;
             }
             const type = getApparentTypeOfContextualType(objectLiteral, contextFlags);
+            // @ts-ignore
+            console.log("getContextualTypeForObjectLiteralElement", type.id, type.__debugTypeToString())
             if (type) {
                 if (hasBindableName(element)) {
                     // For a (non-symbol) computed property, there is no reason to look up the name
                     // in the type. It will just be "__computed", which does not appear in any
                     // SymbolTable.
                     const symbol = getSymbolOfNode(element);
-                    return getTypeOfPropertyOfContextualType(type, symbol.escapedName, getSymbolLinks(symbol).nameType);
+                    let x = getTypeOfPropertyOfContextualType(type, symbol.escapedName, getSymbolLinks(symbol).nameType);
+                    // @ts-ignore
+                    console.log(x?.__debugTypeToString?.())
+                    return x
                 }
                 if (element.name) {
                     const nameType = getLiteralTypeFromPropertyName(element.name);
@@ -27640,6 +27639,9 @@ namespace ts {
             if (node.flags & NodeFlags.InWithStatement) {
                 // We cannot answer semantic questions within a with block, do not proceed any further
                 return undefined;
+            }
+            if (node.dependentContextualType) {
+                return node.dependentContextualType
             }
             if (node.contextualType) {
                 return node.contextualType;
@@ -28225,31 +28227,32 @@ namespace ts {
         function checkObjectLiteral(node: ObjectLiteralExpression, checkMode?: CheckMode): Type {
             const contextualType = getContextualType(node, /*contextFlags*/ undefined);
             const isContextualTypeDependent = 
-              contextualType &&
-              contextualType.immediateBaseConstraint && 
-              contextualType.immediateBaseConstraint.aliasTypeArguments &&
-              contextualType.immediateBaseConstraint.aliasTypeArguments.length === 1 &&
-              contextualType.immediateBaseConstraint.aliasTypeArguments[0].id === contextualType.id
+                contextualType &&
+                contextualType.immediateBaseConstraint && 
+                contextualType.immediateBaseConstraint.aliasTypeArguments &&
+                contextualType.immediateBaseConstraint.aliasTypeArguments.length === 1 &&
+                contextualType.immediateBaseConstraint.aliasTypeArguments[0].id === contextualType.id
 
             if (!isContextualTypeDependent) {
                 return checkNonDependentlyObjectLiteral(node, checkMode)
             }
 
             let valueType = checkNonDependentlyObjectLiteral(node, checkMode);
-            
-            let newImmediateBaseConstraint = createTypeParameter()
-            newImmediateBaseConstraint.aliasSymbol = contextualType.immediateBaseConstraint!.aliasSymbol
-            newImmediateBaseConstraint.aliasTypeArguments = [valueType];
 
-            let originalImmediateBaseConstraint = contextualType.immediateBaseConstraint
-            contextualType.immediateBaseConstraint = newImmediateBaseConstraint
+            let newContextualType = cloneTypeParameter(contextualType)
+            newContextualType.immediateBaseConstraint = createTypeParameter()
+            newContextualType.immediateBaseConstraint.aliasSymbol = contextualType.immediateBaseConstraint!.aliasSymbol
+            newContextualType.immediateBaseConstraint.aliasTypeArguments = [valueType];
+
+            // @ts-ignore
+            console.log("checkObjectLiteral", newContextualType.immediateBaseConstraint.id, newContextualType.immediateBaseConstraint.__debugTypeToString())
 
             recursivelyClearNodeCaches(node)
-            let r = checkNonDependentlyObjectLiteral(node, checkMode);
-
-            contextualType.immediateBaseConstraint = originalImmediateBaseConstraint
-            
-            return r
+            node.dependentContextualType = newContextualType
+            let x = checkNonDependentlyObjectLiteral(node);
+            // @ts-ignore
+            console.log(x.__debugTypeToString())
+            return x
         }
 
         function recursivelyClearNodeCaches(node: any) {
@@ -28274,6 +28277,7 @@ namespace ts {
                 }
 
                 for (let k in node) {
+                    if (k === "parent") continue;
                     clearCaches(node[k]);
                 }
             }
@@ -30624,8 +30628,6 @@ namespace ts {
                     const paramType = getTypeAtPosition(signature, i);
                     if (couldContainTypeVariables(paramType)) {
                         const argType = checkExpressionWithContextualType(arg, paramType, context, checkMode);
-                        // @ts-ignore
-                        // console.log(checkMode, argType.__debugTypeToString(), paramType.__debugTypeToString())
                         inferTypes(context.inferences, argType, paramType);
                     }
                 }
@@ -33543,10 +33545,11 @@ namespace ts {
         }
 
         function contextuallyCheckFunctionExpressionOrObjectLiteralMethod(node: FunctionExpression | ArrowFunction | MethodDeclaration, checkMode?: CheckMode) {
-            console.log("got here")
             const links = getNodeLinks(node);
+            console.log("got here")
             // Check if function expression is contextually typed and assign parameter types if so.
             if (!(links.flags & NodeCheckFlags.ContextChecked)) {
+                console.log("got here too")
                 const contextualSignature = getContextualSignature(node);
                 // If a type check is started at a function expression that is an argument of a function call, obtaining the
                 // contextual type may recursively get back to here during overload resolution of the call. If so, we will have
