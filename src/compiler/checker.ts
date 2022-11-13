@@ -27416,22 +27416,16 @@ namespace ts {
                 return propertyAssignmentType;
             }
             const type = getApparentTypeOfContextualType(objectLiteral, contextFlags);
-            // @ts-ignore
-            console.log("getContextualTypeForObjectLiteralElement", type.id, type.__debugTypeToString())
             if (type) {
                 if (hasBindableName(element)) {
                     // For a (non-symbol) computed property, there is no reason to look up the name
                     // in the type. It will just be "__computed", which does not appear in any
                     // SymbolTable.
                     const symbol = getSymbolOfNode(element);
-                    let x = getTypeOfPropertyOfContextualType(type, symbol.escapedName, getSymbolLinks(symbol).nameType);
-                    // @ts-ignore
-                    console.log(x?.__debugTypeToString?.())
-                    return x
+                    return getTypeOfPropertyOfContextualType(type, symbol.escapedName, getSymbolLinks(symbol).nameType);
                 }
                 if (element.name) {
                     const nameType = getLiteralTypeFromPropertyName(element.name);
-                    // We avoid calling getApplicableIndexInfo here because it performs potentially expensive intersection reduction.
                     return mapType(type, t => findApplicableIndexInfo(getIndexInfosOfStructuredType(t), nameType)?.type, /*noReductions*/ true);
                 }
             }
@@ -28240,19 +28234,19 @@ namespace ts {
             let valueType = checkNonDependentlyObjectLiteral(node, checkMode);
 
             let newContextualType = cloneTypeParameter(contextualType)
-            newContextualType.immediateBaseConstraint = createTypeParameter()
-            newContextualType.immediateBaseConstraint.aliasSymbol = contextualType.immediateBaseConstraint!.aliasSymbol
-            newContextualType.immediateBaseConstraint.aliasTypeArguments = [valueType];
-
-            // @ts-ignore
-            console.log("checkObjectLiteral", newContextualType.immediateBaseConstraint.id, newContextualType.immediateBaseConstraint.__debugTypeToString())
+            newContextualType.immediateBaseConstraint =
+                instantiateType(
+                    contextualType.immediateBaseConstraint,
+                    createTypeMapper([contextualType], [valueType])
+                )
+            if (newContextualType.immediateBaseConstraint!.flags & TypeFlags.StructuredType) {
+                newContextualType.immediateBaseConstraint = resolveStructuredTypeMembers(newContextualType.immediateBaseConstraint as StructuredType)
+            }
 
             recursivelyClearNodeCaches(node)
             node.dependentContextualType = newContextualType
-            let x = checkNonDependentlyObjectLiteral(node);
-            // @ts-ignore
-            console.log(x.__debugTypeToString())
-            return x
+
+            return checkNonDependentlyObjectLiteral(node);
         }
 
         function recursivelyClearNodeCaches(node: any) {
