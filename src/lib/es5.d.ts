@@ -1631,6 +1631,8 @@ type Capitalize<S extends string> = intrinsic;
  */
 type Uncapitalize<S extends string> = intrinsic;
 
+type BitSet<T extends number> = { [_ in `__bitSet${T}`]?: true }
+
 /**
  * Marker for contextual 'this' type
  */

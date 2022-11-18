@@ -1210,6 +1210,7 @@ export function createTypeChecker(host: TypeCheckerHost): TypeChecker {
     let deferredGlobalBigIntType: ObjectType | undefined;
     let deferredGlobalNaNSymbol: Symbol | undefined;
     let deferredGlobalRecordSymbol: Symbol | undefined;
+    let deferredGlobalBitSetSymbol: Symbol | undefined;
 
     const allPotentiallyUnusedIdentifiers = new Map<Path, PotentiallyUnusedIdentifier[]>(); // key is file name
 
@@ -14580,6 +14581,11 @@ export function createTypeChecker(host: TypeCheckerHost): TypeChecker {
         return deferredGlobalRecordSymbol === unknownSymbol ? undefined : deferredGlobalRecordSymbol;
     }
 
+    function getGlobalBitSetSymbol(): Symbol | undefined {
+        deferredGlobalBitSetSymbol ||= getGlobalTypeAliasSymbol("BitSet" as __String, /*arity*/ 2, /*reportErrors*/ true) || unknownSymbol;
+        return deferredGlobalBitSetSymbol === unknownSymbol ? undefined : deferredGlobalBitSetSymbol;
+    }
+
     /**
      * Instantiates a global type that is generic with some element type, and returns that instantiation.
      */
@@ -25591,6 +25597,11 @@ export function createTypeChecker(host: TypeCheckerHost): TypeChecker {
                     return assumeTrue ?
                         getUnionType([narrowType(type, expr.left, /*assumeTrue*/ true), narrowType(type, expr.right, /*assumeTrue*/ true)]) :
                         narrowType(narrowType(type, expr.left, /*assumeTrue*/ false), expr.right, /*assumeTrue*/ false);
+                case SyntaxKind.AmpersandToken:
+                    const bitSetSymbol = getGlobalBitSetSymbol()
+                    return assumeTrue && bitSetSymbol ?
+                      getIntersectionType([type, getTypeAliasInstantiation(bitSetSymbol, [getTypeOfExpression(expr.right)])]) :
+                      type
             }
             return type;
         }
