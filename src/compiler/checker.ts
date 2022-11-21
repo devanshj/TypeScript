@@ -28416,7 +28416,7 @@ export function createTypeChecker(host: TypeCheckerHost): TypeChecker {
         return links.immediateTarget;
     }
 
-    function checkObjectLiteral(node: ObjectLiteralExpression, checkMode?: CheckMode): Type {
+    function checkObjectLiteral(node: ObjectLiteralExpression, checkMode?: CheckMode, previousValueType?: Type, passes = 3): Type {
         const contextualType = getContextualType(node, /*contextFlags*/ undefined);
         const isContextualTypeDependent =
             node.parent.kind === SyntaxKind.CallExpression &&
@@ -28441,8 +28441,7 @@ export function createTypeChecker(host: TypeCheckerHost): TypeChecker {
             return checkObjectLiteralNonDependently(node, checkMode);
         }
 
-        const valueType = checkObjectLiteralNonDependently(node, checkMode);
-
+        const valueType = previousValueType ?? checkObjectLiteralNonDependently(node, checkMode);
         const newContextualType = cloneTypeParameter(contextualType);
         newContextualType.immediateBaseConstraint =
             instantiateType(
@@ -28463,10 +28462,37 @@ export function createTypeChecker(host: TypeCheckerHost): TypeChecker {
             nodeLinks.resolvedSymbol = undefined;
             nodeLinks.resolvedIndexInfo = undefined;
             nodeLinks.contextFreeType = undefined;
+
+            if (node.symbol) {
+                const symbolLinks = getSymbolLinks(node.symbol)
+                symbolLinks.type = undefined;
+                symbolLinks.typeParameters = undefined
+                /*for (let signature of getSignaturesOfType(getTypeOfSymbol(getSymbolOfNode(node)!), SignatureKind.Call)) {
+                    //signature.resolvedReturnType = undefined;
+                    //signature.resolvedTypePredicate = undefined;
+                    //signature.resolvedMinArgumentCount = undefined;
+                }*/
+            }
         });
 
         node.contextualType = newContextualType;
-        return checkObjectLiteralNonDependently(node);
+        let newValueType = checkObjectLiteralNonDependently(node);
+        console.log("passes", passes)
+        // @ts-ignore
+        console.log(newContextualType.immediateBaseConstraint.__debugTypeToString())
+        // @ts-ignore
+        console.log(valueType.__debugTypeToString())
+        // @ts-ignore
+        console.log(newValueType.__debugTypeToString())
+        console.log()
+        if (isTypeIdenticalTo(newValueType, valueType)) {
+            return newValueType;
+        }
+        if (passes <= 0) {
+            error(node, Diagnostics.Dependently_contextual_inference_requires_too_many_passes_and_possibly_infinite);
+            return newValueType;
+        }
+        return checkObjectLiteral(node, checkMode, newValueType, passes - 1);
     }
 
     function checkObjectLiteralNonDependently(node: ObjectLiteralExpression, checkMode?: CheckMode): Type {
@@ -33764,11 +33790,8 @@ export function createTypeChecker(host: TypeCheckerHost): TypeChecker {
                         assignNonContextualParameterTypes(signature);
                     }
                 }
-                if (contextualSignature && !getReturnTypeFromAnnotation(node) && !signature.resolvedReturnType) {
-                    const returnType = getReturnTypeFromBody(node, checkMode);
-                    if (!signature.resolvedReturnType) {
-                        signature.resolvedReturnType = returnType;
-                    }
+                if (contextualSignature && !getReturnTypeFromAnnotation(node)) {
+                    signature.resolvedReturnType = getReturnTypeFromBody(node, checkMode);
                 }
                 checkSignatureDeclaration(node);
             }
