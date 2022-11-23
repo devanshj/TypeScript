@@ -7392,7 +7392,7 @@
         "category": "Message",
         "code": 95175
     },
-    "Dependently contextual inference requires too many passes and possibly infinite": {
+    "Dependent contextual inference requires too many passes and possibly infinite": {
         "category": "Error",
         "code": 95176
     },

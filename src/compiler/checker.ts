@@ -28416,7 +28416,7 @@ export function createTypeChecker(host: TypeCheckerHost): TypeChecker {
         return links.immediateTarget;
     }
 
-    function checkObjectLiteral(node: ObjectLiteralExpression, checkMode?: CheckMode, previousValueType?: Type, passes = 3): Type {
+    function checkObjectLiteral(node: ObjectLiteralExpression, checkMode?: CheckMode): Type {
         const contextualType = getContextualType(node, /*contextFlags*/ undefined);
         const isContextualTypeDependent =
             node.parent.kind === SyntaxKind.CallExpression &&
@@ -28441,58 +28441,69 @@ export function createTypeChecker(host: TypeCheckerHost): TypeChecker {
             return checkObjectLiteralNonDependently(node, checkMode);
         }
 
-        const valueType = previousValueType ?? checkObjectLiteralNonDependently(node, checkMode);
-        const newContextualType = cloneTypeParameter(contextualType);
-        newContextualType.immediateBaseConstraint =
-            instantiateType(
-                contextualType.immediateBaseConstraint,
-                createTypeMapper([contextualType], [valueType])
-            );
-        if (newContextualType.immediateBaseConstraint!.flags & TypeFlags.StructuredType) {
-            newContextualType.immediateBaseConstraint = resolveStructuredTypeMembers(newContextualType.immediateBaseConstraint as StructuredType);
-        }
-
-        forEachChildRecursively(node, node => {
-            const nodeLinks = getNodeLinks(node);
-            nodeLinks.flags &= ~NodeCheckFlags.TypeChecked;
-            nodeLinks.flags &= ~NodeCheckFlags.ContextChecked;
-            nodeLinks.resolvedType = undefined;
-            nodeLinks.resolvedEnumType = undefined;
-            nodeLinks.resolvedSignature = undefined;
-            nodeLinks.resolvedSymbol = undefined;
-            nodeLinks.resolvedIndexInfo = undefined;
-            nodeLinks.contextFreeType = undefined;
-
-            if (node.symbol) {
-                const symbolLinks = getSymbolLinks(node.symbol)
-                symbolLinks.type = undefined;
-                symbolLinks.typeParameters = undefined
-                /*for (let signature of getSignaturesOfType(getTypeOfSymbol(getSymbolOfNode(node)!), SignatureKind.Call)) {
-                    //signature.resolvedReturnType = undefined;
-                    //signature.resolvedTypePredicate = undefined;
-                    //signature.resolvedMinArgumentCount = undefined;
-                }*/
+        diagnostics.isStaging = true;
+        suggestionDiagnostics.isStaging = true;
+        let valueType = checkObjectLiteralNonDependently(node, checkMode);
+        let previousValueType = undefined as Type | undefined;
+        let passes = 0;
+        while(true) {
+            if (previousValueType && isTypeIdenticalTo(valueType, previousValueType)) {
+                commitDiagnostics();
+                return valueType;
             }
-        });
+            if (passes >= 3) {
+                commitDiagnostics();
+                error(node, Diagnostics.Dependent_contextual_inference_requires_too_many_passes_and_possibly_infinite);
+                return valueType;
+            }
+            
+            const newContextualType = cloneTypeParameter(contextualType as TypeParameter);
+            newContextualType.immediateBaseConstraint =
+                instantiateType(
+                    contextualType.immediateBaseConstraint,
+                    createTypeMapper([contextualType], [valueType])
+                );
+            if (newContextualType.immediateBaseConstraint!.flags & TypeFlags.StructuredType) {
+                newContextualType.immediateBaseConstraint = resolveStructuredTypeMembers(newContextualType.immediateBaseConstraint as StructuredType);
+            }
+    
+            forEachChildRecursively(node, node => {
+                const nodeLinks = getNodeLinks(node);
+                nodeLinks.flags &= ~NodeCheckFlags.TypeChecked;
+                nodeLinks.flags &= ~NodeCheckFlags.ContextChecked;
+                nodeLinks.resolvedType = undefined;
+                nodeLinks.resolvedEnumType = undefined;
+                nodeLinks.resolvedSignature = undefined;
+                nodeLinks.resolvedSymbol = undefined;
+                nodeLinks.resolvedIndexInfo = undefined;
+                nodeLinks.contextFreeType = undefined;
+    
+                if (node.symbol) {
+                    const symbolLinks = getSymbolLinks(node.symbol);
+                    symbolLinks.type = undefined;
+                    symbolLinks.typeParameters = undefined;
+                }
+            });
+    
+            
+            node.contextualType = newContextualType;
+            revertDiagnostics();
+            previousValueType = valueType;
+            valueType = checkObjectLiteralNonDependently(node);
+            passes++;
+        }
+        
+        function commitDiagnostics() {
+            diagnostics.commitStaged();
+            suggestionDiagnostics.commitStaged();
+            diagnostics.isStaging = false;
+            suggestionDiagnostics.isStaging = false;
+        }
 
-        node.contextualType = newContextualType;
-        let newValueType = checkObjectLiteralNonDependently(node);
-        console.log("passes", passes)
-        // @ts-ignore
-        console.log(newContextualType.immediateBaseConstraint.__debugTypeToString())
-        // @ts-ignore
-        console.log(valueType.__debugTypeToString())
-        // @ts-ignore
-        console.log(newValueType.__debugTypeToString())
-        console.log()
-        if (isTypeIdenticalTo(newValueType, valueType)) {
-            return newValueType;
+        function revertDiagnostics() {
+            diagnostics.revertStaged();
+            suggestionDiagnostics.revertStaged();
         }
-        if (passes <= 0) {
-            error(node, Diagnostics.Dependently_contextual_inference_requires_too_many_passes_and_possibly_infinite);
-            return newValueType;
-        }
-        return checkObjectLiteral(node, checkMode, newValueType, passes - 1);
     }
 
     function checkObjectLiteralNonDependently(node: ObjectLiteralExpression, checkMode?: CheckMode): Type {

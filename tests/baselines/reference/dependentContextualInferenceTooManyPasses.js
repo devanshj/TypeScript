@@ -1,3 +1,4 @@
+//// [dependentContextualInferenceTooManyPasses.ts]
 declare const f:
   <T extends F<T>>(t: T) => T
 
@@ -16,3 +17,13 @@ f({
   d: x => ({ value: x.value  }),
   e: x => ({ value: x.value  }),
 })
+
+
+//// [dependentContextualInferenceTooManyPasses.js]
+f({
+    a: ({ value: "a" }),
+    b: function (x) { return ({ value: x.value }); },
+    c: function (x) { return ({ value: x.value }); },
+    d: function (x) { return ({ value: x.value }); },
+    e: function (x) { return ({ value: x.value }); }
+});
