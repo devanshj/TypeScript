@@ -90,10 +90,27 @@ const options = /** @type {Options} */ (rawOptions);
 const nativePreviewReleaseProfile = /** @type {"native-preview" | "typescript"} */ ("typescript");
 const nativePreviewReleaseVersion = /** @type {string | undefined} */ (undefined);
 const produceNativePreviewVsix = /** @type {boolean} */ (false);
-const produceTypeScriptNightlyVsix = /** @type {boolean} */ (true);
+const produceTypeScriptNightlyVsix = /** @type {boolean} */ (false);
 const usePublishedPlatformPackagesForVsix = /** @type {boolean} */ (false);
 const produceAnyVsix = produceNativePreviewVsix || produceTypeScriptNightlyVsix;
 const publishAsTypescript = nativePreviewReleaseProfile === "typescript";
+
+/** Scoped fork packages (`@sthir/typescript`, `@sthir/typescript-{os}-{arch}`). Empty means Microsoft's unscoped `typescript`. */
+const publishNpmScope = "@sthir";
+const publishRepositoryUrl = "https://github.com/devanshj/TypeScript.git";
+const publishBugsUrl = "https://github.com/devanshj/TypeScript/issues";
+const publishHomepage = "https://github.com/devanshj/TypeScript";
+
+/**
+ * @param {string} unscopedName
+ */
+function scopedNpmName(unscopedName) {
+    if (publishNpmScope) {
+        return `${publishNpmScope}/${unscopedName}`;
+    }
+    // Microsoft: unscoped `typescript` plus `@typescript/typescript-{os}-{arch}` platform packages.
+    return unscopedName === "typescript" && publishAsTypescript ? "typescript" : `@typescript/${unscopedName}`;
+}
 
 if (options.forRelease && !options.setPrerelease && (!nativePreviewReleaseVersion || produceAnyVsix)) {
     throw new Error("forRelease requires setPrerelease unless nativePreviewReleaseVersion is hardcoded and VSIX production is disabled");
@@ -1249,16 +1266,30 @@ const getVersion = memoize(() => {
     return version;
 });
 
+function getVersionChannel() {
+    const version = getVersion();
+    if (!version) {
+        return undefined;
+    }
+    const match = version.match(/-(dev|beta|rc)(?:[.-]|$)/);
+    if (match?.[1]) return match[1] === "dev" ? "next" : match[1];
+    if (version === nativePreviewReleaseVersion) return "latest";
+    return undefined;
+}
+
 function getPublishTag() {
+    // Scoped fork: always `latest` so `npm install @sthir/typescript` tracks these builds.
+    // Version strings still follow Microsoft nightlies (`7.1.0-dev.YYYYMMDD.N`).
+    if (publishNpmScope) {
+        return "latest";
+    }
     if (publishAsTypescript) {
-        const version = getVersion();
-        if (!version) {
+        const channel = getVersionChannel();
+        if (!getVersion()) {
             throw new Error("Publishing as 'typescript' requires a version before selecting an npm tag.");
         }
-        const match = version.match(/-(dev|beta|rc)(?:[.-]|$)/);
-        if (match?.[1]) return match[1] === "dev" ? "next" : match[1];
-        if (version === nativePreviewReleaseVersion) return "latest";
-        throw new Error(`Refusing to publish 'typescript' with the latest tag from non-release version ${version}.`);
+        if (channel) return channel;
+        throw new Error(`Refusing to publish 'typescript' with the latest tag from non-release version ${getVersion()}.`);
     }
     return "latest";
 }
@@ -1501,7 +1532,7 @@ function cpWithoutNodeModulesOrTsconfig(src, dest) {
 }
 
 const mainNativePreviewPackage = {
-    npmPackageName: publishAsTypescript ? "typescript" : "@typescript/typescript",
+    npmPackageName: scopedNpmName("typescript"),
     npmDir: path.join(builtNpm, publishAsTypescript ? "typescript" : "native-preview"),
     npmTarball: path.join(builtNpm, publishAsTypescript ? "typescript.tgz" : "native-preview.tgz"),
 };
@@ -1662,8 +1693,7 @@ function nodeToGOARCH(arch, os) {
 }
 
 const getPlatforms = memoize(() => {
-    const publishTag = getPublishTag();
-    let supportedPlatforms = publishAsTypescript && publishTag !== "next"
+    let supportedPlatforms = publishAsTypescript && getVersionChannel() !== "next"
         ? platforms
         : platforms.filter(({ vsix }) => vsix);
 
@@ -1677,7 +1707,7 @@ const getPlatforms = memoize(() => {
         const npmDirName = `${packageBaseName}-${os}-${arch}`;
         const npmDir = path.join(builtNpm, npmDirName);
         const npmTarball = `${npmDir}.tgz`;
-        const npmPackageName = `@typescript/${npmDirName}`;
+        const npmPackageName = scopedNpmName(npmDirName);
 
         /** @type {VsixExtension[]} */
         let extensions = [];
@@ -1888,21 +1918,20 @@ async function runBuildNativePreviewPackages() {
         inputPackageJson.bin = {
             tsc: "./bin/tsc",
         };
-        inputPackageJson.description = "TypeScript is a language for application scale JavaScript development";
-        inputPackageJson.homepage = "https://www.typescriptlang.org/";
+        inputPackageJson.description = "A fork of TypeScript";
+        inputPackageJson.homepage = publishHomepage;
         inputPackageJson.keywords = [
             "TypeScript",
-            "Microsoft",
             "compiler",
             "language",
             "javascript",
         ];
         inputPackageJson.bugs = {
-            url: "https://github.com/microsoft/TypeScript/issues",
+            url: publishBugsUrl,
         };
         inputPackageJson.repository = {
             type: "git",
-            url: "https://github.com/microsoft/TypeScript.git",
+            url: publishRepositoryUrl,
         };
         delete inputPackageJson.scripts;
         delete inputPackageJson.devDependencies;
